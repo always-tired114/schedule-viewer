@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<!-- 想抄就抄, 反正靈感也不是我原創的, 然後css js都在一個檔案抱歉 -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時段表</title>
+    <style>
+        :root {
+            --primary-color: #32b945;
+            --border-color: #d1d5db;
+            --header-bg: #f3f4f6;
+            --cell-bg: #ffffff;
+            --selection-bg: rgba(74, 222, 128, 0.3);
+            font-size: 16px; 
+        }
+        body { 
+            font-family: sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 1.25rem; 
+            background: #f9fafb; 
+            color: #333; 
+        }
+        .controls { 
+            background: white; 
+            padding: 0.9375rem;
+            border-radius: 0.5rem; 
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.1); 
+            margin-bottom: 1.25rem; 
+            display: flex; 
+            gap: 0.625rem; 
+            align-items: center; 
+            width: 100%; 
+            max-width: 59.375rem; 
+            flex-wrap: wrap; 
+        }
+        .grid-wrapper { 
+            background: white; 
+            border-radius: 0.5rem; 
+            box-shadow: 0 0.25rem 0.375rem rgba(0,0,0,0.1); 
+            padding: 0.9375rem;
+            user-select: none; 
+            overflow-x: auto; 
+            max-width: 100%; 
+        }
+        .schedule-grid { 
+            display: grid; 
+            grid-template-columns: 4.375rem repeat(7, 6.25rem); 
+            border-top: 0.0625rem solid var(--border-color); 
+            border-left: 0.0625rem solid var(--border-color); 
+
+        }
+        .cell { 
+            border-right: 0.0625rem solid var(--border-color); 
+            border-bottom: 0.0625rem solid var(--border-color); 
+            height: 1.875rem; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 0.8125rem; 
+        }
+        .header-cell { background: var(--header-bg); font-weight: bold; }
+        .time-label { 
+            background: var(--header-bg); 
+            color: #666; 
+            font-size: 0.6875rem; 
+            justify-content: flex-end; 
+            padding-right: 0.3125rem; 
+        }
+        .slot { cursor: cell; background: var(--cell-bg); transition: background 0.1s; }
+        .slot.selected { background-color: var(--primary-color); }
+        .slot.selecting { background-color: var(--selection-bg); }
+        button { 
+            padding: 0.5rem 0.9375rem;  
+            cursor: pointer; 
+            border-radius: 0.3125rem; 
+            border: none; 
+            background: #2563eb; 
+            color: white; 
+            font-weight: bold; 
+            font-size: 0.875rem; 
+        }
+        button:hover { background: #1d4ed8; }
+        select { 
+            padding: 0.4375rem; 
+            border-radius: 0.3125rem; 
+            border: 0.0625rem solid #ccc; 
+            background: white; 
+            font-size: 0.875rem; 
+        }
+        .info-text { 
+            margin-top: 0.625rem; 
+            font-size: 0.75rem; 
+            color: #666; 
+        }
+        #copyMsg {
+            font-size: 0.75rem;
+            margin-left: 0.3125rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <strong>時區設定：</strong>
+        <select id="timezoneSelect"></select>
+        <button id="copyBtn">複製連結</button>
+        <button id="clearBtn" style="background:#ef4444;">清空重設</button>
+        <span id="copyMsg" style="color:green; opacity:0; font-weight:bold;">已複製到剪貼簿，請在指定位置貼上</span>
+    </div>
+    <div class="info-text">操作方式：滑鼠左鍵點擊並拖曳可進行區塊選取像Excel那樣，手機使用者輕觸後拖曳即可選取區塊</div>
+    <div class="grid-wrapper">
+        <div class="schedule-grid" id="grid"></div>
+    </div>
+    
+
+    <script> /* 要分檔案的就自行複製貼上吧( */
+        const grid = document.getElementById('grid');
+        const tzSelect = document.getElementById('timezoneSelect');
+        const days = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+        
+        let isMouseDown = false;
+        let startPos = { d: -1, h: -1 };
+        let currentPos = { d: -1, h: -1 };
+        let isAdding = true;
+
+        const timezones = [
+            { label: "(UTC-10) 夏威夷", value: "UTC-10" },
+            { label: "(UTC-09) 阿拉斯加", value: "UTC-9" },
+            { label: "(UTC-08) 太平洋 (洛杉磯)", value: "UTC-8" },
+            { label: "(UTC-07) 山區 (丹佛)", value: "UTC-7" },
+            { label: "(UTC-06) 中部 (芝加哥)", value: "UTC-6" },
+            { label: "(UTC-05) 東部 (紐約)", value: "UTC-5" },
+            { label: "(UTC-04) 大西洋 (哈利法克斯)", value: "UTC-4" },
+            { label: "(UTC-03) 巴西利亞", value: "UTC-3" },
+            { label: "(UTC-02) 中大西洋", value: "UTC-2" },
+            { label: "(UTC-01) 亞速群島", value: "UTC-1" },
+            { label: "(UTC+00) 格林威治 (倫敦)", value: "UTC+0" },
+            { label: "(UTC+01) 中歐 (柏林)", value: "UTC+1" },
+            { label: "(UTC+02) 東歐 (雅典)", value: "UTC+2" },
+            { label: "(UTC+03) 莫斯科 / 台北", value: "UTC+3" },
+            { label: "(UTC+04) 阿布達比", value: "UTC+4" },
+            { label: "(UTC+05) 伊斯蘭馬巴德", value: "UTC+5" },
+            { label: "(UTC+06) 達卡", value: "UTC+6" },
+            { label: "(UTC+07) 曼谷 / 河內", value: "UTC+7" },
+            { label: "(UTC+08) 台北 / 香港 / 北京", value: "UTC+8" },
+            { label: "(UTC+09) 東京 / 首爾", value: "UTC+9" },
+            { label: "(UTC+10) 雪梨 / 關島", value: "UTC+10" },
+            { label: "(UTC+11) 所羅門群島", value: "UTC+11" },
+            { label: "(UTC+12) 奧克蘭 / 斐濟", value: "UTC+12" },
+            { label: "(UTC+13) 東加", value: "UTC+13" }
+        ];
+
+        function init() {
+            timezones.forEach(tz => {
+                const opt = document.createElement('option');
+                opt.value = tz.value;
+                opt.innerText = tz.label;
+                tzSelect.appendChild(opt);
+            });
+            tzSelect.value = "UTC+8";
+            renderGrid();
+            loadFromURL();
+            window.addEventListener('mouseup', endSelection);
+            tzSelect.addEventListener('change', updateURL);
+        }
+
+        function renderGrid() {
+            grid.innerHTML = '';
+            grid.appendChild(createCell('', 'header-cell'));
+            days.forEach(d => grid.appendChild(createCell(d, 'header-cell')));
+            for (let h = 0; h < 24; h++) {
+                grid.appendChild(createCell(`${h}:00`, 'time-label'));
+                for (let d = 0; d < 7; d++) {
+                    const slot = createCell('', 'slot');
+                    slot.dataset.d = d;
+                    slot.dataset.h = h;
+                    slot.addEventListener('mousedown', (e) => startSelection(e, d, h));
+                    slot.addEventListener('mouseenter', () => moveSelection(d, h));
+                    grid.appendChild(slot);
+                }
+            }
+        }
+
+        function createCell(text, className) {
+            const div = document.createElement('div');
+            div.className = `cell ${className}`;
+            div.innerText = text;
+            return div;
+        }
+
+        function binToHex(bin) {
+            let hex = "";
+            for (let i = 0; i < bin.length; i += 4) {
+                let chunk = bin.substr(i, 4);
+                hex += parseInt(chunk, 2).toString(16);
+            }
+            return hex;
+        }
+
+        function hexToBin(hex) {
+            let bin = "";
+            for (let i = 0; i < hex.length; i++) {
+                bin += parseInt(hex[i], 16).toString(2).padStart(4, '0');
+            }
+            return bin;
+        }
+
+        function startSelection(e, d, h) {
+            isMouseDown = true;
+            startPos = { d, h };
+            currentPos = { d, h };
+            isAdding = !e.target.classList.contains('selected');
+            updateVisualSelection();
+        }
+
+        function moveSelection(d, h) {
+            if (!isMouseDown) return;
+            currentPos = { d, h };
+            updateVisualSelection();
+        }
+
+        function updateVisualSelection() {
+            const minD = Math.min(startPos.d, currentPos.d);
+            const maxD = Math.max(startPos.d, currentPos.d);
+            const minH = Math.min(startPos.h, currentPos.h);
+            const maxH = Math.max(startPos.h, currentPos.h);
+            document.querySelectorAll('.slot').forEach(slot => {
+                const sd = parseInt(slot.dataset.d);
+                const sh = parseInt(slot.dataset.h);
+                if (sd >= minD && sd <= maxD && sh >= minH && sh <= maxH) {
+                    slot.classList.add('selecting');
+                } else {
+                    slot.classList.remove('selecting');
+                }
+            });
+        }
+
+        function endSelection() {
+            if (!isMouseDown) return;
+            isMouseDown = false;
+            document.querySelectorAll('.slot.selecting').forEach(slot => {
+                slot.classList.remove('selecting');
+                if (isAdding) slot.classList.add('selected');
+                else slot.classList.remove('selected');
+            });
+            updateURL();
+        }
+
+        function updateURL() {
+            const zone = tzSelect.value;
+            let bits = "";
+            for(let d=0; d<7; d++) {
+                for(let h=0; h<24; h++) {
+                    const el = document.querySelector(`.slot[data-d="${d}"][data-h="${h}"]`);
+                    bits += el.classList.contains('selected') ? "1" : "0";
+                }
+            }
+            const params = new URLSearchParams();
+            params.set('zone', zone);
+            params.set('table', binToHex(bits));
+            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+        }
+
+        function loadFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('zone')) tzSelect.value = params.get('zone');
+            const hexTable = params.get('table');
+            if (hexTable) {
+                const bits = hexToBin(hexTable);
+                for(let i=0; i < Math.min(bits.length, 168); i++) {
+                    const d = Math.floor(i / 24);
+                    const h = i % 24;
+                    if (bits[i] === "1") {
+                        const el = document.querySelector(`.slot[data-d="${d}"][data-h="${h}"]`);
+                        if(el) el.classList.add('selected');
+                    }
+                }
+            }
+        }
+
+        document.getElementById('copyBtn').onclick = () => {
+            updateURL();
+            navigator.clipboard.writeText(window.location.href);
+            const msg = document.getElementById('copyMsg');
+            msg.style.opacity = 1;
+            setTimeout(() => msg.style.opacity = 0, 2000);
+        };
+
+        document.getElementById('clearBtn').onclick = () => {
+            if(confirm("即將清空表格，確定要繼續嗎？")) {
+                document.querySelectorAll('.slot').forEach(s => s.classList.remove('selected'));
+                updateURL();
+            }
+        };
+
+        init();
+    </script>
+</body>
+</html>
