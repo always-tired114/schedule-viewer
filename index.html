@@ -164,6 +164,7 @@
             renderGrid();
             loadFromURL();
             window.addEventListener('mouseup', endSelection);
+            window.addEventListener('touchend', endSelection);
             tzSelect.addEventListener('change', updateURL);
         }
 
@@ -179,6 +180,10 @@
                     slot.dataset.h = h;
                     slot.addEventListener('mousedown', (e) => startSelection(e, d, h));
                     slot.addEventListener('mouseenter', () => moveSelection(d, h));
+                    slot.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        startSelection(e, d, h);
+                    });
                     grid.appendChild(slot);
                 }
             }
@@ -248,6 +253,20 @@
             });
             updateURL();
         }
+
+        function handleTouchMove(e) {
+            if (!isMouseDown) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (element && element.classList.contains('slot')) {
+                const d = parseInt(element.dataset.d);
+                const h = parseInt(element.dataset.h);
+                moveSelection(d, h);
+            }
+        }
+
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
 
         function updateURL() {
             const zone = tzSelect.value;
